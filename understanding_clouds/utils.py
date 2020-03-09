@@ -5,12 +5,21 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
 
+from understanding_clouds.constants import NO_MASK_PROVIDED
 
-def preproces_dataframe(df):
+def preproces_dataframe_single_mask(df):
     df['filename'] = df['Image_Label'].apply(lambda x: x.split('_')[0])
     df['mask_type'] = df['Image_Label'].apply(lambda x: x.split('_')[1])
     return df
 
+def preproces_dataframe_all_masks(df):
+    df = preproces_dataframe_single_mask(df)
+    orig_index = df.filename.drop_duplicates().tolist()
+    df['EncodedPixels'].fillna(NO_MASK_PROVIDED, inplace=True)
+    df = df.drop('Image_Label',axis=1)
+    df = df.groupby('filename').transform(lambda x: ','.join(x)).drop_duplicates()
+    df['filename']=orig_index
+    return df
 
 def rle_to_mask(rle_string, width, height):
     '''
@@ -26,7 +35,7 @@ def rle_to_mask(rle_string, width, height):
     '''
     rows, cols = height, width
 
-    if not isinstance(rle_string, str):
+    if not isinstance(rle_string, str) or rle_string == NO_MASK_PROVIDED:
         return np.zeros((height, width))
     else:
         rle_numbers = [int(num_string)
@@ -37,7 +46,19 @@ def rle_to_mask(rle_string, width, height):
             index -= 1
             img[index:index + length] = 255
         img = img.reshape(cols, rows).T
+
         return img
+
+def get_all_masks_and_img(df, index, images_dirpath):
+    img_path = df.iloc[index]['filename']
+    img = cv2.imread(os.path.join(images_dirpath, img_path))
+    w, h = img.shape[:2]
+    rle_masks = df.iloc[index]['EncodedPixels']
+    rle_masks = rle_masks.split(',')
+    masks = [rle_to_mask(rle_mask, h, w) for rle_mask in rle_masks]
+    labels = df.iloc[index]['mask_type']
+    labels = labels.split(',')
+    return masks, img, labels
 
 
 def get_mask_and_img(df, index, images_dirpath):
@@ -47,6 +68,13 @@ def get_mask_and_img(df, index, images_dirpath):
     mask = rle_to_mask(df.loc[index, 'EncodedPixels'], h, w)
     return mask, img
 
+def show_masks_and_img(masks, img, labels):
+    fig, axs = plt.subplots(len(masks)+1, figsize=(20,60))
+    for i, (mask, label) in enumerate(zip(masks,labels)):
+        axs[i].imshow(mask)
+        axs[i].title.set_text(f'Mask type is: {label}')
+    axs[-1].imshow(img)
+    plt.show()
 
 def show_mask(df, index, images_dirpath):
     mask_name = df.loc[index, 'mask_type']
