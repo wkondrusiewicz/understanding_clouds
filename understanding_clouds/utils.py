@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
 
-from understanding_clouds.constants import NO_MASK_PROVIDED
+from understanding_clouds.constants import NO_MASK_PROVIDED, BACKGROUND_CLASSNAME
 
 def preproces_dataframe_single_mask(df):
     df['filename'] = df['Image_Label'].apply(lambda x: x.split('_')[0])
@@ -16,6 +16,8 @@ def preproces_dataframe_all_masks(df):
     df = preproces_dataframe_single_mask(df)
     orig_index = df.filename.drop_duplicates().tolist()
     df['EncodedPixels'].fillna(NO_MASK_PROVIDED, inplace=True)
+    df_mask = df['EncodedPixels']==NO_MASK_PROVIDED
+    df.loc[df_mask,'mask_type']=BACKGROUND_CLASSNAME
     df = df.drop('Image_Label',axis=1)
     df = df.groupby('filename').transform(lambda x: ','.join(x)).drop_duplicates()
     df['filename']=orig_index
