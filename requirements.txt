@@ -1,5 +1,8 @@
-numpy
+numpy==1.17.0
 pandas
 matplotlib
 opencv-python
 jupyterlab
+pycocotools
+Cython
+loggify
