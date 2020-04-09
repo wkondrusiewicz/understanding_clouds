@@ -26,10 +26,10 @@ class MaskRCNNDataset(Dataset):
 
         # img_id = self.df.iloc[index]['filename']
         labels = [LABELS_MAPPING[l] for l in labels]
-
+        labels = [l for l in labels if l > 0]
         bboxes, masks_not_empty = [], []
         for mask in filter(lambda x: np.sum(x) > 0, masks):
-            # it return tuple of indices where elements are not zero, it is almost an alias for np.asarray(condition).nonzero(), see np.nonzero documentation for more details
+            # it returns a tuple of indices where elements are not zero, it is almost an alias for np.asarray(condition).nonzero(), see np.nonzero documentation for more details
             pos = np.where(mask)
             xmin = np.min(pos[1])
             xmax = np.max(pos[1])
