@@ -12,10 +12,11 @@ from understanding_clouds.constants import LABELS_MAPPING
 
 
 class MaskRCNNDataset(Dataset):
-    def __init__(self, images_dirpath, transforms=None, img_scale_factor=4):
+    def __init__(self, images_dirpath, transforms=None, img_scale_factor=4, subsample=None):
         self.images_dirpath = images_dirpath
-        self.df = preproces_dataframe_all_masks(pd.read_csv(
-            os.path.join(images_dirpath, 'train_small.csv')))
+        df = pd.read_csv(os.path.join(images_dirpath, 'train.csv'))
+        df = preproces_dataframe_all_masks(df)
+        self.df = df.iloc[::subsample] if subsample is not None else df
         self.transforms = transforms
         self._img_scale_factor = img_scale_factor
 
@@ -44,7 +45,7 @@ class MaskRCNNDataset(Dataset):
         bboxes = torch.as_tensor(bboxes, dtype=torch.float32)
         area = (bboxes[:, 3] - bboxes[:, 1]) * \
             (bboxes[:, 2] - bboxes[:, 0])
-        masks = torch.as_tensor(masks_not_empty, dtype=torch.uint8)
+        masks = torch.as_tensor(masks_not_empty, dtype=torch.uint8) / 255
         iscrowd = torch.zeros((len(masks),), dtype=torch.int64)
 
         target = {'boxes': bboxes,
