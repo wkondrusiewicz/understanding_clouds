@@ -4,8 +4,11 @@ import json
 
 from typing import Mapping
 
+import numpy as np
 import torch
 import torchvision
+
+from torch.utils.data import DataLoader
 
 from torchvision.models.detection.faster_rcnn import FastRCNNPredictor
 from torchvision.models.detection.mask_rcnn import MaskRCNNPredictor
@@ -37,17 +40,61 @@ class CloudsMaskRCNN:
 
         os.makedirs(self.experiment_dirpath, exist_ok=True)
 
-    def train(self, dataloaders: Mapping[str, torch.utils.data.DataLoader], epochs: int, snapshot_frequency: int = 10):
+    def _single_forward_pass(self, images, targets, phase):
+        images = [img.cuda() for img in images]
+        targets = [{k: v.cuda() for k, v in target.items()}
+                   for target in targets]
+        # it has a structure of {'loss_type': torch.tensor corresponding to the loss}
+        loss_dict = self.net(images, targets)
+        return loss_dict
+
+    def train(self, dataloaders: Mapping[str, torch.utils.data.DataLoader],
+              epochs: int, snapshot_frequency: int = 10, print_freq=None):
+        losses_to_save = {}
+        self.net.train()
         for i, epoch in enumerate(range(1, epochs + 1)):
+            epoch_losses = {}
+            print(f'Epoch {epoch}')
+
             for phase, dataloader in dataloaders.items():
-                if phase == 'TRAIN':
-                    train_one_epoch(self.net, self.optimizer, dataloader,
-                                    self.device, epoch, print_freq=len(dataloader) // 5)
-                    self.lr_scheduler.step()
-                else:
-                    evaluate(self.net, dataloader, device=self.device)
+                phase_loss = 0
+
+                if print_freq is None:
+                    print_freq = len(dataloader) // 3
+
+                for j, (images, targets) in enumerate(dataloader):
+                    self.optimizer.zero_grad()
+
+                    with torch.set_grad_enabled(phase == 'TRAIN'):
+                        loss_dict = self._single_forward_pass(
+                            images, targets, phase)
+                        loss = sum([l for l in loss_dict.values()])
+                        phase_loss += loss.item()
+
+                        if phase == 'TRAIN':
+                            loss.backward()
+                            self.optimizer.step()
+
+                    if j % print_freq == 0:
+                        loss_dict_printable = {''.join(k.split('loss_')): np.round(
+                            v.item(), 5) for k, v in loss_dict.items()}
+                        print(
+                            f'\t{phase}, [{j+1}/{len(dataloader)}], total loss = {loss.item()}, particular losses:\n\t{loss_dict_printable}\n')
+
+                phase_loss /= len(dataloader)
+                epoch_losses[phase] = phase_loss
+                log_string = f'\t{phase} ended with total losss {phase_loss}\n\n\n '
+                print(log_string)
+
+            losses_to_save[str(epoch)] = epoch_losses
+
+            self.lr_scheduler.step()
+
             if i % snapshot_frequency == 0:
                 self.save_model(epoch)
+
+        with open(os.path.join(self.experiment_dirpath, 'losses.json'), 'w') as f:
+            json.dump(losses_to_save, f)
         self.save_model(epoch)
 
     def predict(self, dataloader):
@@ -71,9 +118,10 @@ class CloudsMaskRCNN:
 
 
 def get_mask_rcnn_net(num_classes):
+    kw = {'min_size': 350, 'max_size': 525}
     # load an instance segmentation model pre-trained pre-trained on COCO
     model = torchvision.models.detection.maskrcnn_resnet50_fpn(
-        pretrained=True)
+        pretrained=True, **kw)
 
     # get number of input features for the classifier
     in_features = model.roi_heads.box_predictor.cls_score.in_features
@@ -112,36 +160,45 @@ def parse_args():
                         default=0.9, type=float)
     parser.add_argument('--weight_decay',
                         default=0.005, type=float)
+    parser.add_argument('--subsample', default=100, type=int)
     args = parser.parse_args()
     return args
 
 
-
 def main_without_args(args):
     ds_train = MaskRCNNDataset(images_dirpath=args.data_path)
-    dataloaders = {'TRAIN': torch.utils.data.DataLoader(ds_train, batch_size=args.train_batch_size, shuffle=True, collate_fn=collate_fn)}
-    clouds_model = CloudsMaskRCNN(experiment_dirpath=args.experiment_dirpath, init_lr=args.init_lr, weight_decay=args.weight_decay, gamma=args.gamma)
+    ds_valid = MaskRCNNDataset(
+        images_dirpath=args.data_path, subsample=5)
+    dataloaders = {'TRAIN': DataLoader(ds_train, batch_size=args.train_batch_size,
+                                       shuffle=True, collate_fn=collate_fn),
+                   'VALID': DataLoader(ds_valid, batch_size=1, shuffle=False,
+                                       collate_fn=collate_fn)}
+    clouds_model = CloudsMaskRCNN(experiment_dirpath=args.experiment_dirpath,
+                                  init_lr=args.init_lr, weight_decay=args.weight_decay, gamma=args.gamma)
     if args.pretrained_model_path is not None:
-        args.pretrained_model_path = os.path.abspath(args.pretrained_model_path)
+        args.pretrained_model_path = os.path.abspath(
+            args.pretrained_model_path)
         clouds_model.load_model(args.pretrained_model_path)
 
     clouds_model.train(dataloaders=dataloaders, epochs=args.epochs)
     training_params = {'epochs': args.epochs,
-                   'init_lr': args.init_lr,
-                   'train_batch_size': args.train_batch_size,
-                   'data_path': os.path.abspath(args.data_path),
-                   'weight_decay': args.weight_decay,
-                   'gamma': args.gamma,
-                   'pretrained_model_path': args.pretrained_model_path or None}
+                       'init_lr': args.init_lr,
+                       'train_batch_size': args.train_batch_size,
+                       'data_path': os.path.abspath(args.data_path),
+                       'weight_decay': args.weight_decay,
+                       'gamma': args.gamma,
+                       'pretrained_model_path': args.pretrained_model_path or None}
 
     with open(os.path.join(args.experiment_dirpath, 'training_params.json'), 'w') as f:
         json.dump(training_params, f)
+
 
 def main():
     args = parse_args()
     os.makedirs(args.experiment_dirpath, exist_ok=True)
     with Loggify(os.path.join(args.experiment_dirpath, 'log.txt')):
         main_without_args(args)
+
 
 if __name__ == '__main__':
     main()

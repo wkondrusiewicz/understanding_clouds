@@ -45,7 +45,8 @@ class MaskRCNNDataset(Dataset):
         bboxes = torch.as_tensor(bboxes, dtype=torch.float32)
         area = (bboxes[:, 3] - bboxes[:, 1]) * \
             (bboxes[:, 2] - bboxes[:, 0])
-        masks = torch.as_tensor(masks_not_empty, dtype=torch.uint8) / 255
+        masks = torch.as_tensor(
+            masks_not_empty, dtype=torch.uint8) / 255
         iscrowd = torch.zeros((len(masks),), dtype=torch.int64)
 
         target = {'boxes': bboxes,
