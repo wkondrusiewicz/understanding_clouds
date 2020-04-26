@@ -1,8 +1,10 @@
 import os
 import argparse
 import json
+import time
 
 from typing import Mapping
+from copy import deepcopy
 
 import numpy as np
 import torch
@@ -16,12 +18,12 @@ from torchvision.models.detection.mask_rcnn import MaskRCNNPredictor
 from loggify import Loggify
 
 from understanding_clouds.datasets.mask_rcnn_dataset import MaskRCNNDataset
-from understanding_clouds.torchvision_references.engine import train_one_epoch, evaluate
-from understanding_clouds.torchvision_references.utils import collate_fn
+from understanding_clouds.models.mask_rcnn.prediction import MaskRCNNPrediction
+from understanding_clouds.utils import collate_fn
 
 
 class CloudsMaskRCNN:
-    def __init__(self, experiment_dirpath: str, init_lr: float = 0.001, weight_decay: float = 0.005, gamma: float = 0.9):
+    def __init__(self, experiment_dirpath: str, init_lr: float = 0.001, weight_decay: float = 0.005, gamma: float = 0.96):
         self.experiment_dirpath = experiment_dirpath
         self.init_lr = init_lr
         self.weight_decay = weight_decay
@@ -53,6 +55,7 @@ class CloudsMaskRCNN:
         losses_to_save = {}
         self.net.train()
         for i, epoch in enumerate(range(1, epochs + 1)):
+            t1 = time.time()
             epoch_losses = {}
             print(f'Epoch {epoch}')
 
@@ -93,12 +96,31 @@ class CloudsMaskRCNN:
             if i % snapshot_frequency == 0:
                 self.save_model(epoch)
 
+            t2 = time.time()
+
+            print(
+                f'\tEpoch {epoch} took {np.round(t2-t1, 2)} seconds\n')
+
         with open(os.path.join(self.experiment_dirpath, 'losses.json'), 'w') as f:
             json.dump(losses_to_save, f)
         self.save_model(epoch)
 
-    def predict(self, dataloader):
-        pass
+    def predict(self, dataloader: DataLoader, on_test: bool = False):
+        self.net.cpu()
+        self.net.eval()
+        predictions = []
+        for data in dataloader:
+            images, targets = (data, None) if on_test else data
+            predictions.append(self._single_prediction(images, targets))
+        return predictions
+
+    def _single_prediction(self, images, targets=None):
+        images = [img.cpu() for img in images]
+        if targets is not None:
+            targets = [{k: v.cpu() for k, v in target.items()}
+                       for target in targets]
+        outputs = self.net(deepcopy(images))
+        return MaskRCNNPrediction(raw_images=images, raw_outputs=outputs, raw_targets=targets)
 
     def save_model(self, epoch):
         os.makedirs(self.experiment_dirpath, exist_ok=True)
@@ -166,9 +188,10 @@ def parse_args():
 
 
 def main_without_args(args):
-    ds_train = MaskRCNNDataset(images_dirpath=args.data_path)
+    ds_train = MaskRCNNDataset(
+        images_dirpath=args.data_path, subsample=args.subsample)
     ds_valid = MaskRCNNDataset(
-        images_dirpath=args.data_path, subsample=5)
+        images_dirpath=args.data_path, subsample=5 * int(args.subsample))
     dataloaders = {'TRAIN': DataLoader(ds_train, batch_size=args.train_batch_size,
                                        shuffle=True, collate_fn=collate_fn),
                    'VALID': DataLoader(ds_valid, batch_size=1, shuffle=False,
