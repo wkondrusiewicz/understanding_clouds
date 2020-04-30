@@ -51,7 +51,7 @@ class CloudsMaskRCNN:
         return loss_dict
 
     def train(self, dataloaders: Mapping[str, torch.utils.data.DataLoader],
-              epochs: int, snapshot_frequency: int = 10, print_freq=None):
+              epochs: int, snapshot_frequency: int = 3, print_freq=None):
         losses_to_save = {}
         self.net.train()
         for i, epoch in enumerate(range(1, epochs + 1)):
@@ -66,6 +66,7 @@ class CloudsMaskRCNN:
                     print_freq = len(dataloader) // 3
 
                 for j, (images, targets) in enumerate(dataloader):
+                    t11 = time.time()
                     self.optimizer.zero_grad()
 
                     with torch.set_grad_enabled(phase == 'TRAIN'):
@@ -77,12 +78,12 @@ class CloudsMaskRCNN:
                         if phase == 'TRAIN':
                             loss.backward()
                             self.optimizer.step()
-
-                    if j % print_freq == 0:
+                    t12 = time.time()
+                    if (j +1 ) % print_freq == 0:
                         loss_dict_printable = {''.join(k.split('loss_')): np.round(
                             v.item(), 5) for k, v in loss_dict.items()}
                         print(
-                            f'\t{phase}, [{j+1}/{len(dataloader)}], total loss = {loss.item()}, particular losses:\n\t{loss_dict_printable}\n')
+                            f'\t{phase}, [{j+1}/{len(dataloader)}], mean time per print freq {print_freq*np.round(t12-t11, 2)} seconds, total loss = {loss.item()}, particular losses:\n\t{loss_dict_printable}\n')
 
                 phase_loss /= len(dataloader)
                 epoch_losses[phase] = phase_loss
@@ -183,15 +184,22 @@ def parse_args():
     parser.add_argument('--weight_decay',
                         default=0.005, type=float)
     parser.add_argument('--subsample', default=100, type=int)
+    parser.add_argument('-tts', '--train_test_split', default=0.05, type=float)
+    parser.add_argument('--print_freq', default=None, type=int)
     args = parser.parse_args()
     return args
 
 
 def main_without_args(args):
+    if args.train_test_split:
+        from glob import glob
+        from sklearn.model_selection import train_test_split
+        df_len = len(glob(os.path.join(args.data_path,'train_images/*')))
+        train_ids, valid_ids = train_test_split(range(df_len), test_size=args.train_test_split, random_state=42)
     ds_train = MaskRCNNDataset(
-        images_dirpath=args.data_path, subsample=args.subsample)
+        images_dirpath=args.data_path, subsample=args.subsample, split_ids=train_ids)
     ds_valid = MaskRCNNDataset(
-        images_dirpath=args.data_path, subsample=5 * int(args.subsample))
+        images_dirpath=args.data_path, subsample=args.subsample, split_ids=valid_ids)
     dataloaders = {'TRAIN': DataLoader(ds_train, batch_size=args.train_batch_size,
                                        shuffle=True, collate_fn=collate_fn),
                    'VALID': DataLoader(ds_valid, batch_size=1, shuffle=False,
@@ -203,14 +211,16 @@ def main_without_args(args):
             args.pretrained_model_path)
         clouds_model.load_model(args.pretrained_model_path)
 
-    clouds_model.train(dataloaders=dataloaders, epochs=args.epochs)
+    clouds_model.train(dataloaders=dataloaders, epochs=args.epochs, print_freq=args.print_freq)
     training_params = {'epochs': args.epochs,
                        'init_lr': args.init_lr,
                        'train_batch_size': args.train_batch_size,
                        'data_path': os.path.abspath(args.data_path),
                        'weight_decay': args.weight_decay,
                        'gamma': args.gamma,
-                       'pretrained_model_path': args.pretrained_model_path or None}
+                       'pretrained_model_path': args.pretrained_model_path or None,
+                       'subsample': args.subsample or None,
+                       'train_test_split': args.train_test_split or None}
 
     with open(os.path.join(args.experiment_dirpath, 'training_params.json'), 'w') as f:
         json.dump(training_params, f)
