@@ -8,6 +8,11 @@ import numpy as np
 from understanding_clouds.constants import NO_MASK_PROVIDED, BACKGROUND_CLASSNAME
 
 
+def collate_fn(batch):
+    # unpacking a training batch for mask_rcnn
+    return tuple(zip(*batch))
+
+
 def scale_img(img, scale_factor, interpolation=cv2.INTER_AREA):
     h, w = img.shape[:2]
     new_shape = w // scale_factor, h // scale_factor
