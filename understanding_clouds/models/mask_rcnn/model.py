@@ -122,7 +122,7 @@ class CloudsMaskRCNN:
             gpu_usage = [x for x in str(output).split('|') if 'MiB' in x][0]
 
             print(
-            f'\tEpoch {epoch} took {np.round(t2-t1, 2)} seconds\nGPU utilization during this epoch was {gpu_usage}')
+            f'\tEpoch {epoch} took {np.round(t2-t1, 2)} seconds\n\tGPU utilization during this epoch was {gpu_usage}\n')
 
         with open(os.path.join(self.experiment_dirpath, 'losses.json'), 'w') as f:
             json.dump(losses_to_save, f)
