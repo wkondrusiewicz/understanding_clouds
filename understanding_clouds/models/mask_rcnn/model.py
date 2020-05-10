@@ -2,6 +2,7 @@ import os
 import argparse
 import json
 import time
+from subprocess import Popen, PIPE
 
 from typing import Mapping
 from copy import deepcopy
@@ -110,17 +111,22 @@ class CloudsMaskRCNN:
 
             # self.lr_scheduler.step()
 
-            # if i % snapshot_frequency == 0:
-            #     self.save_model(epoch)
+            if i % snapshot_frequency == 0:
+                self.save_model(epoch)
 
             t2 = time.time()
 
+            p = Popen(['nvidia-smi'], stdin=PIPE, stdout=PIPE, stderr=PIPE)
+            output, _ = p.communicate(b"input data that is passed to subprocess' stdin")
+
+            gpu_usage = [x for x in str(output).split('|') if 'MiB' in x][0]
+
             print(
-                f'\tEpoch {epoch} took {np.round(t2-t1, 2)} seconds\n')
+            f'\tEpoch {epoch} took {np.round(t2-t1, 2)} seconds\nGPU utilization during this epoch was {gpu_usage}')
 
         with open(os.path.join(self.experiment_dirpath, 'losses.json'), 'w') as f:
             json.dump(losses_to_save, f)
-        # self.save_model(epoch)
+        self.save_model(epoch)
 
     def predict(self, dataloader: DataLoader, on_test: bool = False):
         self.net.cpu()
@@ -234,7 +240,7 @@ def main_without_args(args):
     training_params = {'epochs': args.epochs,
                        'init_lr': args.init_lr,
                        'train_batch_size': args.train_batch_size,
-                       'valid_batch_size': args.valid_batch_size, 
+                       'valid_batch_size': args.valid_batch_size,
                        'data_path': os.path.abspath(args.data_path),
                        'weight_decay': args.weight_decay,
                        'gamma': args.gamma,

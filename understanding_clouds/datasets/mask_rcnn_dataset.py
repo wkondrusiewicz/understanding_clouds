@@ -12,7 +12,7 @@ from understanding_clouds.constants import LABELS_MAPPING
 
 
 class MaskRCNNDataset(Dataset):
-    def __init__(self, images_dirpath, transforms=None, img_scale_factor=1, subsample=None, split_ids=None, csv_name='train.csv'):
+    def __init__(self, images_dirpath, transforms=None, img_scale_factor=4, subsample=None, split_ids=None, csv_name='train.csv'):
         self.images_dirpath = images_dirpath
         df = pd.read_csv(os.path.join(images_dirpath, csv_name))
         df = preproces_dataframe_all_masks(df)
