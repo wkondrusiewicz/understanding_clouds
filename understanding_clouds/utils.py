@@ -112,3 +112,17 @@ def show_mask(df, index, images_dirpath):
     axs[1].imshow(img)
     plt.title(f'Mask type is: {mask_name}')
     plt.show()
+
+
+def plot_losses(data_train, data_valid):
+    fig, axs = plt.subplots(figsize=(30,20), ncols=3, nrows=2, squeeze=False)
+    axs = axs.reshape(6)
+    for i, loss_type in enumerate(data_train[0].keys()):
+        axs[i].plot([l[loss_type] for l in data_train], label='TRAIN')
+        axs[i].plot([l[loss_type] for l in data_valid], label='VALID')
+        axs[i].legend()
+        axs[i].set_title(loss_type)
+    plt.show()
+
+def get_losses(data, phase):
+    return [losses for epoch_value in data.values() for losses in epoch_value[phase]['per_batch_losses'].values()] 

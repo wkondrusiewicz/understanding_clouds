@@ -37,8 +37,6 @@ class CloudsMaskRCNN:
         self.optimizer = torch.optim.Adam(
             params, lr=self.init_lr, weight_decay=self.weight_decay)
 
-        self.lr_scheduler = torch.optim.lr_scheduler.ExponentialLR(
-            optimizer=self.optimizer, gamma=self.gamma)
 
         os.makedirs(self.experiment_dirpath, exist_ok=True)
 
@@ -51,9 +49,17 @@ class CloudsMaskRCNN:
         return loss_dict
 
     def train(self, dataloaders: Mapping[str, torch.utils.data.DataLoader],
-              epochs: int, snapshot_frequency: int = 3, print_freq=None):
+              epochs: int, snapshot_frequency: int = 10, print_freq=None):
         losses_to_save = {}
         self.net.train()
+
+        # self.lr_scheduler = torch.optim.lr_scheduler.ExponentialLR(
+        #     optimizer=self.optimizer, gamma=self.gamma)
+
+
+        # self.lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(
+        #     optimizer=self.optimizer, milestones=[int(0.6 * epochs), int(0.9 * epochs)])
+
         for i, epoch in enumerate(range(1, epochs + 1)):
             t1 = time.time()
             epoch_losses = {}
@@ -65,6 +71,8 @@ class CloudsMaskRCNN:
                 if print_freq is None:
                     print_freq = len(dataloader) // 3
 
+                per_batch_losses = {}
+
                 for j, (images, targets) in enumerate(dataloader):
                     t11 = time.time()
                     self.optimizer.zero_grad()
@@ -72,30 +80,38 @@ class CloudsMaskRCNN:
                     with torch.set_grad_enabled(phase == 'TRAIN'):
                         loss_dict = self._single_forward_pass(
                             images, targets, phase)
+
+
+                        # loss_dict['loss_mask']=2 * loss_dict['loss_mask']
+
+
                         loss = sum([l for l in loss_dict.values()])
                         phase_loss += loss.item()
 
                         if phase == 'TRAIN':
                             loss.backward()
                             self.optimizer.step()
+
+                    loss_dict_printable = {''.join(k.split('loss_')): np.round(
+                        v.item(), 5) for k, v in loss_dict.items()}
+                    loss_dict_printable['total_loss']=np.round(loss.item(),5)
+                    per_batch_losses[str(j)]=loss_dict_printable
                     t12 = time.time()
                     if (j +1 ) % print_freq == 0:
-                        loss_dict_printable = {''.join(k.split('loss_')): np.round(
-                            v.item(), 5) for k, v in loss_dict.items()}
                         print(
                             f'\t{phase}, [{j+1}/{len(dataloader)}], mean time per print freq {print_freq*np.round(t12-t11, 2)} seconds, total loss = {loss.item()}, particular losses:\n\t{loss_dict_printable}\n')
 
                 phase_loss /= len(dataloader)
-                epoch_losses[phase] = phase_loss
+                epoch_losses[phase] = {'total_phase_loss': phase_loss, 'per_batch_losses': per_batch_losses}
                 log_string = f'\t{phase} ended with total losss {phase_loss}\n\n\n '
                 print(log_string)
 
             losses_to_save[str(epoch)] = epoch_losses
 
-            self.lr_scheduler.step()
+            # self.lr_scheduler.step()
 
-            if i % snapshot_frequency == 0:
-                self.save_model(epoch)
+            # if i % snapshot_frequency == 0:
+            #     self.save_model(epoch)
 
             t2 = time.time()
 
@@ -104,7 +120,7 @@ class CloudsMaskRCNN:
 
         with open(os.path.join(self.experiment_dirpath, 'losses.json'), 'w') as f:
             json.dump(losses_to_save, f)
-        self.save_model(epoch)
+        # self.save_model(epoch)
 
     def predict(self, dataloader: DataLoader, on_test: bool = False):
         self.net.cpu()
@@ -127,21 +143,22 @@ class CloudsMaskRCNN:
         os.makedirs(self.experiment_dirpath, exist_ok=True)
         checkpoint = {'epoch': epoch,
                       'state_dict': self.net.state_dict(),
-                      'optimizer': self.optimizer.state_dict(),
-                      'lr_scheduler': self.lr_scheduler.state_dict()}
+                      # 'lr_scheduler': self.lr_scheduler.state_dict(),
+                      'optimizer': self.optimizer.state_dict()}
         torch.save(checkpoint, os.path.join(
             self.experiment_dirpath, 'model.pth'))
 
     def load_model(self, model_path):
         checkpoint = torch.load(model_path)
         self.net.load_state_dict(checkpoint['state_dict'])
-        self.optimizer.load_state_dict(checkpoint['optimizer'])
-        self.lr_scheduler.load_state_dict(checkpoint['lr_scheduler'])
+        # self.optimizer.load_state_dict(checkpoint['optimizer'])
+        # self.lr_scheduler.load_state_dict(checkpoint['lr_scheduler'])
         print('Model loaded successfully!')
 
 
 def get_mask_rcnn_net(num_classes):
     kw = {'min_size': 350, 'max_size': 525}
+    # kw = {'min_size': 200, 'max_size': 300}
     # load an instance segmentation model pre-trained pre-trained on COCO
     model = torchvision.models.detection.maskrcnn_resnet50_fpn(
         pretrained=True, **kw)
@@ -173,6 +190,8 @@ def parse_args():
         '--init_lr', help='Initial learning_rate', type=float, default=0.001)
     parser.add_argument('-trb', '--train_batch_size',
                         help="Trian batch size", type=int, default=1)
+    parser.add_argument('-vab', '--valid_batch_size',
+                        help="Trian batch size", type=int, default=1)
     parser.add_argument('--experiment_dirpath',
                         help='Where to save the model', required=True, type=str)
     parser.add_argument('--pretrained_model_path', help='Path to pretrained model',
@@ -202,7 +221,7 @@ def main_without_args(args):
         images_dirpath=args.data_path, subsample=args.subsample, split_ids=valid_ids)
     dataloaders = {'TRAIN': DataLoader(ds_train, batch_size=args.train_batch_size,
                                        shuffle=True, collate_fn=collate_fn),
-                   'VALID': DataLoader(ds_valid, batch_size=1, shuffle=False,
+                   'VALID': DataLoader(ds_valid, batch_size=args.valid_batch_size, shuffle=False,
                                        collate_fn=collate_fn)}
     clouds_model = CloudsMaskRCNN(experiment_dirpath=args.experiment_dirpath,
                                   init_lr=args.init_lr, weight_decay=args.weight_decay, gamma=args.gamma)
@@ -215,6 +234,7 @@ def main_without_args(args):
     training_params = {'epochs': args.epochs,
                        'init_lr': args.init_lr,
                        'train_batch_size': args.train_batch_size,
+                       'valid_batch_size': args.valid_batch_size, 
                        'data_path': os.path.abspath(args.data_path),
                        'weight_decay': args.weight_decay,
                        'gamma': args.gamma,
