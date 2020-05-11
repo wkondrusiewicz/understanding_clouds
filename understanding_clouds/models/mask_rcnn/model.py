@@ -211,6 +211,7 @@ def parse_args():
     parser.add_argument('--subsample', default=100, type=int)
     parser.add_argument('-tts', '--train_test_split', default=0.05, type=float)
     parser.add_argument('--print_freq', default=None, type=int)
+    parser.add_argument('--snap_freq', default=5, type=int)
     args = parser.parse_args()
     return args
 
@@ -236,7 +237,7 @@ def main_without_args(args):
             args.pretrained_model_path)
         clouds_model.load_model(args.pretrained_model_path)
 
-    clouds_model.train(dataloaders=dataloaders, epochs=args.epochs, print_freq=args.print_freq)
+    clouds_model.train(dataloaders=dataloaders, epochs=args.epochs, print_freq=args.print_freq, snapshot_frequency=args.snap_freq)
     training_params = {'epochs': args.epochs,
                        'init_lr': args.init_lr,
                        'train_batch_size': args.train_batch_size,
