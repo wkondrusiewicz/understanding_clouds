@@ -223,6 +223,8 @@ def main_without_args(args):
         from sklearn.model_selection import train_test_split
         df_len = len(glob(os.path.join(args.data_path,'train_images/*')))
         train_ids, valid_ids = train_test_split(range(df_len), test_size=args.train_test_split, random_state=42)
+    else:
+        train_ids, valid_ids = None, None
     ds_train = MaskRCNNDataset(
         images_dirpath=args.data_path, subsample=args.subsample, split_ids=train_ids, csv_name=args.csv_name)
     ds_valid = MaskRCNNDataset(
