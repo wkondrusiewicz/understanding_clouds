@@ -157,7 +157,7 @@ class CloudsMaskRCNN:
     def load_model(self, model_path):
         checkpoint = torch.load(model_path)
         self.net.load_state_dict(checkpoint['state_dict'])
-        # self.optimizer.load_state_dict(checkpoint['optimizer'])
+        self.optimizer.load_state_dict(checkpoint['optimizer'])
         # self.lr_scheduler.load_state_dict(checkpoint['lr_scheduler'])
         print('Model loaded successfully!')
 
