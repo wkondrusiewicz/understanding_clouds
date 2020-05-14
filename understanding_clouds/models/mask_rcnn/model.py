@@ -188,7 +188,7 @@ def get_mask_rcnn_net(num_classes):
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description='Use regression for OMTF')
+        description='MaskRCNN for Clouds Segmentation')
 
     parser.add_argument('-e', '--epochs', help="Number of epochs",
                         type=int, default=10)
@@ -212,6 +212,7 @@ def parse_args():
     parser.add_argument('-tts', '--train_test_split', default=0.05, type=float)
     parser.add_argument('--print_freq', default=None, type=int)
     parser.add_argument('--snap_freq', default=5, type=int)
+    parser.add_argument('--csv_name', default='train.csv')
     args = parser.parse_args()
     return args
 
@@ -223,9 +224,9 @@ def main_without_args(args):
         df_len = len(glob(os.path.join(args.data_path,'train_images/*')))
         train_ids, valid_ids = train_test_split(range(df_len), test_size=args.train_test_split, random_state=42)
     ds_train = MaskRCNNDataset(
-        images_dirpath=args.data_path, subsample=args.subsample, split_ids=train_ids)
+        images_dirpath=args.data_path, subsample=args.subsample, split_ids=train_ids, csv_name=args.csv_name)
     ds_valid = MaskRCNNDataset(
-        images_dirpath=args.data_path, subsample=args.subsample, split_ids=valid_ids)
+        images_dirpath=args.data_path, subsample=args.subsample, split_ids=valid_ids, csv_name=args.csv_name)
     dataloaders = {'TRAIN': DataLoader(ds_train, batch_size=args.train_batch_size,
                                        shuffle=True, collate_fn=collate_fn),
                    'VALID': DataLoader(ds_valid, batch_size=args.valid_batch_size, shuffle=False,
