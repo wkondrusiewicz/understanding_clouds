@@ -6,3 +6,4 @@ jupyterlab
 pycocotools
 Cython
 loggify
+sklearn
