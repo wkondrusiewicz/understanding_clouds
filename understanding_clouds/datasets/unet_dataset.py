@@ -12,11 +12,12 @@ from understanding_clouds.utils import preproces_dataframe_all_masks, get_all_ma
 from understanding_clouds.constants import LABELS_MAPPING
 
 class UnetDataset(Dataset):
-    def __init__(self, images_dirpath, transforms=None, img_scale_factor=4, subsample=None):
+    def __init__(self, images_dirpath, transforms=None, img_scale_factor=4, subsample=None, split_ids=None):
         self.images_dirpath = images_dirpath
         self._img_scale_factor = 4
         df = pd.read_csv(os.path.join(images_dirpath, 'train.csv'))
         df = preproces_dataframe_all_masks(df)
+        df = df.iloc[split_ids] if split_ids is not None else df
         self.df = df.iloc[::subsample] if subsample is not None else df
         self.transforms = transforms
 

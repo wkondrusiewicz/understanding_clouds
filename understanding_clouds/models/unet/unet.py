@@ -12,12 +12,12 @@ from torch.utils.data import DataLoader
 
 from loggify import Loggify
 
-from understanding_clouds.datasets.mask_unet_dataset import UnetDataset
-
+from understanding_clouds.datasets.unet_dataset import UnetDataset
+from understanding_clouds.models.unet.dice_loss import DiceLoss, BCEDiceLoss
 
 
 class CloudsUnet:
-    def __init__(self, experiment_dirpath: str, init_lr: float = 0.0001, weight_decay: float = 0.005, gamma: float = 0.9):
+    def __init__(self, experiment_dirpath: str, init_lr: float = 0.001, weight_decay: float = 0.005, gamma: float = 0.9):
         self.experiment_dirpath = experiment_dirpath
         self.init_lr = init_lr
         self.weight_decay = weight_decay
@@ -25,10 +25,11 @@ class CloudsUnet:
         self.device = torch.device(
             'cuda' if torch.cuda.is_available() else 'cpu')
 
-        self.net = get_mask_unet_net(4).to(self.device)
+        self.net = get_mask_unet_net(4, self.device)
         params = [p for p in self.net.parameters()
                   if p.requires_grad == True]
-        self.loss_fn = torch.nn.MSELoss() # wrong, but left for now
+        #self.loss_fn = torch.nn.MSELoss() # wrong, but left for now
+        self.loss_fn = BCEDiceLoss(eps=1e-7,activation=None)
         self.optimizer = torch.optim.Adam(
             params, lr=self.init_lr, weight_decay=self.weight_decay)
 
@@ -37,13 +38,16 @@ class CloudsUnet:
 
         os.makedirs(self.experiment_dirpath, exist_ok=True)
 
-    def train(self, dataloader: torch.utils.data.DataLoader, epochs: int, snapshot_frequency: int = 10):
+    def train(self, train_dataloader: torch.utils.data.DataLoader,
+                    valid_dataloader: torch.utils.data.DataLoader,
+                    epochs: int, snapshot_frequency: int = 10):
 
         optimizer = self.optimizer
         loss_fn = self.loss_fn
         model = self.net
 
-        loss_list = []
+        loss_list_train = []
+        loss_list_valid = []
 
         print('Beginning training...')
         print('Using cuda...' if torch.cuda.is_available() else 'Using cpu...')
@@ -54,7 +58,7 @@ class CloudsUnet:
 
             loss_tmp = []
 
-            for image, masks in dataloader:
+            for image, masks in train_dataloader:
                 optimizer.zero_grad()
                 output = model(image)
                 loss = loss_fn(output, masks)
@@ -63,14 +67,32 @@ class CloudsUnet:
                 loss.backward()
                 optimizer.step()
 
-            loss_list.append( np.mean(loss_tmp) )
+            mean = np.mean(loss_tmp)
+            loss_list_train.append( mean )
             if i % snapshot_frequency == 0:
                     self.save_model(epoch)
-        print('Training done!')
-        print('Loss list: ', loss_list)
+
+            print('Validation:')
+            model.eval()
+            del image, masks
+            loss_tmp.clear()
+
+            with torch.no_grad():
+                for image, masks in valid_dataloader:
+                    output = model(image)
+                    loss = loss_fn(output, masks)
+                    loss_tmp.append(loss.item())
+            mean = np.mean(loss_tmp)
+            loss_list_valid.append( mean )
+            print('Loss (valid): ', mean )
+
+        print('Done!')
+        print('All losses (training): ', loss_list_train)
+        print('')
+        print('All losses (validation): ', loss_list_valid)
         print('Saving model...')
         self.save_model(epoch)
-        print('Ready!')
+        print('Done!')
 
     def save_model(self, epoch):
         os.makedirs(self.experiment_dirpath, exist_ok=True)
@@ -89,22 +111,22 @@ class CloudsUnet:
         print('Model loaded successfully!')
 
 
-def get_mask_unet_net(num_classes):
+def get_mask_unet_net(num_classes, device):
     model = torch.hub.load('mateuszbuda/brain-segmentation-pytorch', 'unet',
-                            in_channels=3, out_channels=num_classes, init_features=32, pretrained=False)
+                            in_channels=3, out_channels=1, init_features=32, pretrained=True).to(device)
+    model.conv = torch.nn.Conv2d(32, num_classes, kernel_size=(1, 1), stride=(1, 1)).to(device)
     return model
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(
-        description='Use regression for OMTF')
+    parser = argparse.ArgumentParser()
 
     parser.add_argument('-e', '--epochs', help="Number of epochs",
                         type=int, default=10)
     parser.add_argument(
-        '--init_lr', help='Initial learning_rate', type=float, default=0.0001)
+        '--init_lr', help='Initial learning_rate', type=float, default=0.001)
     parser.add_argument('-trb', '--train_batch_size',
-                        help="Trian batch size", type=int, default=1)
+                        help="Train batch size", type=int, default=1)
     parser.add_argument('--experiment_dirpath',
                         help='Where to save the model', required=True, type=str)
     parser.add_argument('--pretrained_model_path', help='Path to pretrained model',
@@ -116,29 +138,36 @@ def parse_args():
     parser.add_argument('--weight_decay',
                         default=0.005, type=float)
     parser.add_argument('--subsample', default=100, type=int)
+    parser.add_argument('-tts', '--train_test_split', default=0.05, type=float)
     args = parser.parse_args()
     return args
 
 
 def main_without_args(args):
-    print('Loading dataset...')
-    train_dataset = UnetDataset(images_dirpath=args.data_path, subsample = args.subsample)
-    print('Ready!')
-    print('Preparing dataloader...')
-    #dataloader = DataLoader( train_dataset, batch_size=args.train_batch_size, shuffle=True )
-    print('Ready!')
+    if args.train_test_split:
+        from glob import glob
+        from sklearn.model_selection import train_test_split
+        df_len = len(glob(os.path.join(args.data_path,'train_images/*')))
+        train_ids, valid_ids = train_test_split(range(df_len), test_size=args.train_test_split, random_state=42)
+    print('Loading datasets...')
+    train_dataset = UnetDataset(images_dirpath=args.data_path, subsample = args.subsample, split_ids=train_ids)
+    valid_dataset = UnetDataset(images_dirpath=args.data_path, subsample = args.subsample, split_ids=valid_ids)
+    print('Done!')
+    print('Preparing dataloaders...')
+    train_dataloader = DataLoader( train_dataset, batch_size=args.train_batch_size, shuffle=True )
+    valid_dataloader = DataLoader( valid_dataset, batch_size=1, shuffle=False )
+    print('Done!')
     print('Declaring model...')
     clouds_model = CloudsUnet(experiment_dirpath=args.experiment_dirpath,
                                   init_lr=args.init_lr, weight_decay=args.weight_decay, gamma=args.gamma)
-    print('Ready!')
+    print('Done!')
     if args.pretrained_model_path is not None:
         args.pretrained_model_path = os.path.abspath(
             args.pretrained_model_path)
         clouds_model.load_model(args.pretrained_model_path)
 
     print('Initiating training...')
-    clouds_model.train(DataLoader( train_dataset, batch_size=args.train_batch_size, shuffle=True ),
-                       args.epochs)
+    clouds_model.train(train_dataloader, valid_dataloader, args.epochs)
     training_params = {'epochs': args.epochs,
                        'init_lr': args.init_lr,
                        'train_batch_size': args.train_batch_size,
