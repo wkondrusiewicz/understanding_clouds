@@ -186,7 +186,7 @@ def main_without_args(args):
     train_dataloader = DataLoader(
         train_dataset, batch_size=args.train_batch_size, shuffle=True)
     valid_dataloader = DataLoader(
-        valid_dataset, batch_size=1, shuffle=False)
+        valid_dataset, batch_size=args.valid_batch_size, shuffle=False)
     print('Done!')
     print('Declaring model...')
     clouds_model = CloudsUnet(experiment_dirpath=args.experiment_dirpath,

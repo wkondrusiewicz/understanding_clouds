@@ -82,10 +82,6 @@ class CloudsMaskRCNN:
                         loss_dict = self._single_forward_pass(
                             images, targets, phase)
 
-
-                        # loss_dict['loss_mask']=2 * loss_dict['loss_mask']
-
-
                         loss = sum([l for l in loss_dict.values()])
                         phase_loss += loss.item()
 
@@ -164,7 +160,6 @@ class CloudsMaskRCNN:
 
 def get_mask_rcnn_net(num_classes):
     kw = {'min_size': 350, 'max_size': 525}
-    # kw = {'min_size': 200, 'max_size': 300}
     # load an instance segmentation model pre-trained pre-trained on COCO
     model = torchvision.models.detection.maskrcnn_resnet50_fpn(
         pretrained=True, **kw)
