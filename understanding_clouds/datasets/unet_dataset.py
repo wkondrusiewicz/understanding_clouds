@@ -11,6 +11,7 @@ from torch.utils.data import Dataset
 from understanding_clouds.utils import preproces_dataframe_all_masks, get_all_masks_and_img
 from understanding_clouds.constants import LABELS_MAPPING
 
+
 class UnetDataset(Dataset):
     def __init__(self, images_dirpath, transforms=None, img_scale_factor=4, subsample=None, split_ids=None):
         self.images_dirpath = images_dirpath
@@ -21,13 +22,14 @@ class UnetDataset(Dataset):
         self.df = df.iloc[::subsample] if subsample is not None else df
         self.transforms = transforms
 
-    def __getitem__ (self, index):
+    def __getitem__(self, index):
         masks, img, labels = get_all_masks_and_img(
             self.df, index, os.path.join(self.images_dirpath, 'train_images'), scale_factor=self._img_scale_factor)
 
         # size reduced, divisible by 16, left hardcoded for now
-        img = cv2.resize(img, (352,528), interpolation=cv2.INTER_AREA)
-        masks = [cv2.resize(mask, (352,528), interpolation=cv2.INTER_AREA) for mask in masks]
+        img = cv2.resize(img, (352, 528), interpolation=cv2.INTER_AREA)
+        masks = [cv2.resize(
+            mask, (352, 528), interpolation=cv2.INTER_AREA) for mask in masks]
 
         labels = [LABELS_MAPPING[l] for l in labels]
         labels = [l for l in labels if l > 0]

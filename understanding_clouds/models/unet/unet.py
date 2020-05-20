@@ -28,8 +28,8 @@ class CloudsUnet:
         self.net = get_mask_unet_net(4, self.device)
         params = [p for p in self.net.parameters()
                   if p.requires_grad == True]
-        #self.loss_fn = torch.nn.MSELoss() # wrong, but left for now
-        self.loss_fn = BCEDiceLoss(eps=1e-7,activation=None)
+        # self.loss_fn = torch.nn.MSELoss() # wrong, but left for now
+        self.loss_fn = BCEDiceLoss(eps=1e-7, activation=None)
         self.optimizer = torch.optim.Adam(
             params, lr=self.init_lr, weight_decay=self.weight_decay)
 
@@ -39,8 +39,8 @@ class CloudsUnet:
         os.makedirs(self.experiment_dirpath, exist_ok=True)
 
     def train(self, train_dataloader: torch.utils.data.DataLoader,
-                    valid_dataloader: torch.utils.data.DataLoader,
-                    epochs: int, snapshot_frequency: int = 10):
+              valid_dataloader: torch.utils.data.DataLoader,
+              epochs: int, snapshot_frequency: int = 10):
 
         optimizer = self.optimizer
         loss_fn = self.loss_fn
@@ -50,7 +50,8 @@ class CloudsUnet:
         loss_list_valid = []
 
         print('Beginning training...')
-        print('Using cuda...' if torch.cuda.is_available() else 'Using cpu...')
+        print('Using cuda...' if torch.cuda.is_available()
+              else 'Using cpu...')
 
         for i, epoch in enumerate(range(1, epochs + 1)):
             print(f'Epoch {epoch}')
@@ -68,9 +69,9 @@ class CloudsUnet:
                 optimizer.step()
 
             mean = np.mean(loss_tmp)
-            loss_list_train.append( mean )
+            loss_list_train.append(mean)
             if i % snapshot_frequency == 0:
-                    self.save_model(epoch)
+                self.save_model(epoch)
 
             print('Validation:')
             model.eval()
@@ -83,8 +84,8 @@ class CloudsUnet:
                     loss = loss_fn(output, masks)
                     loss_tmp.append(loss.item())
             mean = np.mean(loss_tmp)
-            loss_list_valid.append( mean )
-            print('Loss (valid): ', mean )
+            loss_list_valid.append(mean)
+            print('Loss (valid): ', mean)
 
         print('Done!')
         print('All losses (training): ', loss_list_train)
@@ -113,8 +114,9 @@ class CloudsUnet:
 
 def get_mask_unet_net(num_classes, device):
     model = torch.hub.load('mateuszbuda/brain-segmentation-pytorch', 'unet',
-                            in_channels=3, out_channels=1, init_features=32, pretrained=True).to(device)
-    model.conv = torch.nn.Conv2d(32, num_classes, kernel_size=(1, 1), stride=(1, 1)).to(device)
+                           in_channels=3, out_channels=1, init_features=32, pretrained=True).to(device)
+    model.conv = torch.nn.Conv2d(
+        32, num_classes, kernel_size=(1, 1), stride=(1, 1)).to(device)
     return model
 
 
@@ -138,7 +140,8 @@ def parse_args():
     parser.add_argument('--weight_decay',
                         default=0.005, type=float)
     parser.add_argument('--subsample', default=100, type=int)
-    parser.add_argument('-tts', '--train_test_split', default=0.05, type=float)
+    parser.add_argument('-tts', '--train_test_split',
+                        default=0.05, type=float)
     args = parser.parse_args()
     return args
 
@@ -147,19 +150,25 @@ def main_without_args(args):
     if args.train_test_split:
         from glob import glob
         from sklearn.model_selection import train_test_split
-        df_len = len(glob(os.path.join(args.data_path,'train_images/*')))
-        train_ids, valid_ids = train_test_split(range(df_len), test_size=args.train_test_split, random_state=42)
+        df_len = len(
+            glob(os.path.join(args.data_path, 'train_images/*')))
+        train_ids, valid_ids = train_test_split(
+            range(df_len), test_size=args.train_test_split, random_state=42)
     print('Loading datasets...')
-    train_dataset = UnetDataset(images_dirpath=args.data_path, subsample = args.subsample, split_ids=train_ids)
-    valid_dataset = UnetDataset(images_dirpath=args.data_path, subsample = args.subsample, split_ids=valid_ids)
+    train_dataset = UnetDataset(
+        images_dirpath=args.data_path, subsample=args.subsample, split_ids=train_ids)
+    valid_dataset = UnetDataset(
+        images_dirpath=args.data_path, subsample=args.subsample, split_ids=valid_ids)
     print('Done!')
     print('Preparing dataloaders...')
-    train_dataloader = DataLoader( train_dataset, batch_size=args.train_batch_size, shuffle=True )
-    valid_dataloader = DataLoader( valid_dataset, batch_size=1, shuffle=False )
+    train_dataloader = DataLoader(
+        train_dataset, batch_size=args.train_batch_size, shuffle=True)
+    valid_dataloader = DataLoader(
+        valid_dataset, batch_size=1, shuffle=False)
     print('Done!')
     print('Declaring model...')
     clouds_model = CloudsUnet(experiment_dirpath=args.experiment_dirpath,
-                                  init_lr=args.init_lr, weight_decay=args.weight_decay, gamma=args.gamma)
+                              init_lr=args.init_lr, weight_decay=args.weight_decay, gamma=args.gamma)
     print('Done!')
     if args.pretrained_model_path is not None:
         args.pretrained_model_path = os.path.abspath(
