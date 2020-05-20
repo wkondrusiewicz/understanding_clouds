@@ -1,7 +1,9 @@
 import os
 import argparse
 import json
+import time
 
+from subprocess import Popen, PIPE
 from typing import Mapping
 
 import numpy as np
@@ -40,26 +42,25 @@ class CloudsUnet:
 
     def train(self, train_dataloader: torch.utils.data.DataLoader,
               valid_dataloader: torch.utils.data.DataLoader,
-              epochs: int, snapshot_frequency: int = 10):
+              epochs: int, snapshot_frequency: int = 10, print_freq=10):
 
         optimizer = self.optimizer
         loss_fn = self.loss_fn
         model = self.net
-
-        loss_list_train = []
-        loss_list_valid = []
+        losses = {'TRAIN': {}, 'VALID': {}}
 
         print('Beginning training...')
         print('Using cuda...' if torch.cuda.is_available()
               else 'Using cpu...')
 
         for i, epoch in enumerate(range(1, epochs + 1)):
-            print(f'Epoch {epoch}')
+            print(f'\nEpoch {epoch}')
             model.train()
-
+            t1 = time.time()
             loss_tmp = []
 
-            for image, masks in train_dataloader:
+            for j, (image, masks) in enumerate(train_dataloader):
+                t11 = time.time()
                 optimizer.zero_grad()
                 output = model(image)
                 loss = loss_fn(output, masks)
@@ -67,32 +68,50 @@ class CloudsUnet:
 
                 loss.backward()
                 optimizer.step()
+                t12 = time.time()
+                if (j +1 ) % print_freq == 0:
+                    print(
+                    f'\tTRAIN: [{j+1}/{len(train_dataloader)}], mean time per print freq {print_freq*np.round(t12-t11, 2)} seconds, loss = {loss.item()}\n')
 
             mean = np.mean(loss_tmp)
-            loss_list_train.append(mean)
+            print(f'\tTRAIN ended with total losss {mean}\n\n\n')
+            losses['TRAIN'][epoch] = {'batch_losses': dict(zip(range(len(loss_tmp)), loss_tmp)), 'total_loss': mean}
             if i % snapshot_frequency == 0:
                 self.save_model(epoch)
 
-            print('Validation:')
+            #validation phase
             model.eval()
             del image, masks
             loss_tmp.clear()
 
             with torch.no_grad():
-                for image, masks in valid_dataloader:
+                for j, (image, masks) in enumerate(valid_dataloader):
+                    t11 = time.time()
                     output = model(image)
                     loss = loss_fn(output, masks)
                     loss_tmp.append(loss.item())
+                    t12 = time.time()
+                    if (j +1 ) % print_freq == 0:
+                        print(
+                        f'\tVALID: [{j+1}/{len(valid_dataloader)}], mean time per print freq {print_freq*np.round(t12-t11, 2)} seconds, loss = {loss.item()}\n')
+
             mean = np.mean(loss_tmp)
-            loss_list_valid.append(mean)
-            print('Loss (valid): ', mean)
+            print(f'\tVALID ended with total losss {mean}\n\n\n')
+            losses['VALID'][epoch] = {'batch_losses': dict(zip(range(len(loss_tmp)), loss_tmp)), 'total_loss': mean}
+
+            p = Popen(['nvidia-smi'], stdin=PIPE, stdout=PIPE, stderr=PIPE)
+            output, _ = p.communicate(b"input data that is passed to subprocess' stdin")
+
+            gpu_usage = [x for x in str(output).split('|') if 'MiB' in x][0]
+
+            t2 = time.time()
+            print(f'\tEpoch {epoch} took {np.round(t2-t1, 2)} seconds\n\tGPU utilization during this epoch was {gpu_usage}\n')
 
         print('Done!')
-        print('All losses (training): ', loss_list_train)
-        print('')
-        print('All losses (validation): ', loss_list_valid)
         print('Saving model...')
         self.save_model(epoch)
+        with open(os.path.join(self.experiment_dirpath, 'losses.json'), 'w') as f:
+            json.dump(losses, f)
         print('Done!')
 
     def save_model(self, epoch):
@@ -129,6 +148,8 @@ def parse_args():
         '--init_lr', help='Initial learning_rate', type=float, default=0.001)
     parser.add_argument('-trb', '--train_batch_size',
                         help="Train batch size", type=int, default=1)
+    parser.add_argument('-vab', '--valid_batch_size',
+                        help="Valid batch size", type=int, default=1)
     parser.add_argument('--experiment_dirpath',
                         help='Where to save the model', required=True, type=str)
     parser.add_argument('--pretrained_model_path', help='Path to pretrained model',
@@ -142,6 +163,7 @@ def parse_args():
     parser.add_argument('--subsample', default=100, type=int)
     parser.add_argument('-tts', '--train_test_split',
                         default=0.05, type=float)
+    parser.add_argument('--print_freq', default=10, type=int)
     args = parser.parse_args()
     return args
 
@@ -176,7 +198,7 @@ def main_without_args(args):
         clouds_model.load_model(args.pretrained_model_path)
 
     print('Initiating training...')
-    clouds_model.train(train_dataloader, valid_dataloader, args.epochs)
+    clouds_model.train(train_dataloader, valid_dataloader, args.epochs, print_freq=args.print_freq)
     training_params = {'epochs': args.epochs,
                        'init_lr': args.init_lr,
                        'train_batch_size': args.train_batch_size,
