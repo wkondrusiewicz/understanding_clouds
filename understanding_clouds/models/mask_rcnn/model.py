@@ -38,7 +38,6 @@ class CloudsMaskRCNN:
         self.optimizer = torch.optim.Adam(
             params, lr=self.init_lr, weight_decay=self.weight_decay)
 
-
         os.makedirs(self.experiment_dirpath, exist_ok=True)
 
     def _single_forward_pass(self, images, targets, phase):
@@ -56,7 +55,6 @@ class CloudsMaskRCNN:
 
         # self.lr_scheduler = torch.optim.lr_scheduler.ExponentialLR(
         #     optimizer=self.optimizer, gamma=self.gamma)
-
 
         # self.lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(
         #     optimizer=self.optimizer, milestones=[int(0.6 * epochs), int(0.9 * epochs)])
@@ -91,15 +89,17 @@ class CloudsMaskRCNN:
 
                     loss_dict_printable = {''.join(k.split('loss_')): np.round(
                         v.item(), 5) for k, v in loss_dict.items()}
-                    loss_dict_printable['total_loss']=np.round(loss.item(),5)
-                    per_batch_losses[str(j)]=loss_dict_printable
+                    loss_dict_printable['total_loss'] = np.round(
+                        loss.item(), 5)
+                    per_batch_losses[str(j)] = loss_dict_printable
                     t12 = time.time()
-                    if (j +1 ) % print_freq == 0:
+                    if (j + 1) % print_freq == 0:
                         print(
                             f'\t{phase}, [{j+1}/{len(dataloader)}], mean time per print freq {print_freq*np.round(t12-t11, 2)} seconds, total loss = {loss.item()}, particular losses:\n\t{loss_dict_printable}\n')
 
                 phase_loss /= len(dataloader)
-                epoch_losses[phase] = {'total_phase_loss': phase_loss, 'per_batch_losses': per_batch_losses}
+                epoch_losses[phase] = {
+                    'total_phase_loss': phase_loss, 'per_batch_losses': per_batch_losses}
                 log_string = f'\t{phase} ended with total losss {phase_loss}\n\n\n '
                 print(log_string)
 
@@ -112,20 +112,23 @@ class CloudsMaskRCNN:
 
             t2 = time.time()
 
-            p = Popen(['nvidia-smi'], stdin=PIPE, stdout=PIPE, stderr=PIPE)
-            output, _ = p.communicate(b"input data that is passed to subprocess' stdin")
+            p = Popen(['nvidia-smi'], stdin=PIPE,
+                      stdout=PIPE, stderr=PIPE)
+            output, _ = p.communicate(
+                b"input data that is passed to subprocess' stdin")
 
-            gpu_usage = [x for x in str(output).split('|') if 'MiB' in x][0]
+            gpu_usage = [x for x in str(
+                output).split('|') if 'MiB' in x][0]
 
             print(
-            f'\tEpoch {epoch} took {np.round(t2-t1, 2)} seconds\n\tGPU utilization during this epoch was {gpu_usage}\n')
+                f'\tEpoch {epoch} took {np.round(t2-t1, 2)} seconds\n\tGPU utilization during this epoch was {gpu_usage}\n')
 
         with open(os.path.join(self.experiment_dirpath, 'losses.json'), 'w') as f:
             json.dump(losses_to_save, f)
         self.save_model(epoch)
 
     def predict(self, dataloader: DataLoader, on_test: bool = False):
-        self.net.cpu()
+        self.net.cuda()
         self.net.eval()
         predictions = []
         for data in dataloader:
@@ -134,9 +137,9 @@ class CloudsMaskRCNN:
         return predictions
 
     def _single_prediction(self, images, targets=None):
-        images = [img.cpu() for img in images]
+        images = [img.cuda() for img in images]
         if targets is not None:
-            targets = [{k: v.cpu() for k, v in target.items()}
+            targets = [{k: v.cuda() for k, v in target.items()}
                        for target in targets]
         outputs = self.net(deepcopy(images))
         return MaskRCNNPrediction(raw_images=images, raw_outputs=outputs, raw_targets=targets)
@@ -204,7 +207,8 @@ def parse_args():
     parser.add_argument('--weight_decay',
                         default=0.005, type=float)
     parser.add_argument('--subsample', default=100, type=int)
-    parser.add_argument('-tts', '--train_test_split', default=0.05, type=float)
+    parser.add_argument('-tts', '--train_test_split',
+                        default=0.05, type=float)
     parser.add_argument('--print_freq', default=None, type=int)
     parser.add_argument('--snap_freq', default=5, type=int)
     parser.add_argument('--csv_name', default='train.csv')
@@ -216,8 +220,10 @@ def main_without_args(args):
     if args.train_test_split:
         from glob import glob
         from sklearn.model_selection import train_test_split
-        df_len = len(glob(os.path.join(args.data_path,'train_images/*')))
-        train_ids, valid_ids = train_test_split(range(df_len), test_size=args.train_test_split, random_state=42)
+        df_len = len(
+            glob(os.path.join(args.data_path, 'train_images/*')))
+        train_ids, valid_ids = train_test_split(
+            range(df_len), test_size=args.train_test_split, random_state=42)
     else:
         train_ids, valid_ids = None, None
     ds_train = MaskRCNNDataset(
@@ -235,7 +241,8 @@ def main_without_args(args):
             args.pretrained_model_path)
         clouds_model.load_model(args.pretrained_model_path)
 
-    clouds_model.train(dataloaders=dataloaders, epochs=args.epochs, print_freq=args.print_freq, snapshot_frequency=args.snap_freq)
+    clouds_model.train(dataloaders=dataloaders, epochs=args.epochs,
+                       print_freq=args.print_freq, snapshot_frequency=args.snap_freq)
     training_params = {'epochs': args.epochs,
                        'init_lr': args.init_lr,
                        'train_batch_size': args.train_batch_size,
