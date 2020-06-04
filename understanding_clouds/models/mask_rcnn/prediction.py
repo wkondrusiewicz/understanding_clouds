@@ -1,4 +1,5 @@
 
+import os
 from copy import deepcopy
 
 import numpy as np
@@ -10,15 +11,13 @@ from understanding_clouds.constants import LABELS_MAPPING, REVERSED_LABELS_MAPPI
 
 
 class MaskRCNNPrediction:
-    def __init__(self, raw_images, raw_outputs, raw_targets=None):
+    def __init__(self, raw_images, raw_outputs, raw_targets=None, mask_thresh=0.5, score_threshold=0.5):
         self._raw_images = raw_images
         self._raw_outputs = raw_outputs
         self._raw_targets = raw_targets
         self.targets = []
-
-    @staticmethod
-    def _to_dcn(tensor):
-        return tensor.detach().cpu().numpy()
+        self.postprocess(mask_thresh=mask_thresh,
+                         score_threshold=score_threshold)
 
     def filter_outputs(self, mask_thresh=0.5, score_threshold=0.25):
         self.images = []
@@ -27,11 +26,10 @@ class MaskRCNNPrediction:
         self.labels = []
         self.scores = []
         for img, output in zip(self._raw_images, self._raw_outputs):
-            scores = self._to_dcn(output['scores'])
-            masks = self._to_dcn(
-                (output['masks'] > mask_thresh).squeeze())
-            labels = self._to_dcn(output['labels'])
-            boxes = self._to_dcn(output['boxes'])
+            scores = output['scores']
+            masks = (output['masks'] > mask_thresh).squeeze()
+            labels = output['labels']
+            boxes = output['boxes']
             to_preserve = scores > score_threshold
             scores, masks, labels, boxes = scores[to_preserve], masks[to_preserve], \
                 labels[to_preserve], boxes[to_preserve]
@@ -40,7 +38,7 @@ class MaskRCNNPrediction:
             self.masks.append(masks)
             self.labels.append(labels)
             self.boxes.append(boxes)
-            self.images.append(self._to_dcn(img).transpose((1, 2, 0)))
+            self.images.append(img.transpose((1, 2, 0)))
 
     def merge_predicted_masks_per_class(self):
         # First you must use `filter_outputs` function
@@ -82,8 +80,6 @@ class MaskRCNNPrediction:
             gt_boxes = []
             gt_labels = []
             labels, masks, boxes = t['labels'], t['masks'], t['boxes']
-            labels, masks, boxes = map(
-                self._to_dcn, [labels, masks, boxes])
             for k in REVERSED_LABELS_MAPPING.keys():
                 if k in labels:
                     lab_mask = np.array(labels) == k
@@ -115,18 +111,47 @@ class MaskRCNNPrediction:
 
         return coeff
 
-    def get_dice_for_all_targets(self):
+    def compute_dice_score_for_all_targets(self):
         # Use after applying `merge_predicted_masks_per_class`
         results = {}
         for masks, gt_masks, t in zip(self.masks, self.gt_masks, self._raw_targets):
-            # TODO change image_id to filename
-            gt_indices = [i for i, m in enumerate(gt_masks) if m.sum()>0]
-            gt_masks_for_coeff = gt_masks[gt_indices]
-            masks_for_coeff = masks[gt_indices]
-            score = np.mean([self._get_dice(pred, gt) for pred, gt in zip(masks_for_coeff, gt_masks_for_coeff)])
-            results[t['image_id'].item()] = score
+            raw_scores = [self._get_dice(pred, gt)
+                          for pred, gt in zip(masks, gt_masks)]
+            scores = [self._get_dice(pred, gt) for pred, gt in zip(
+                masks, gt_masks) if (pred.sum() > 0) or (gt.sum() > 0)]
+            score = np.mean(scores)
+            results[t['filename']] = score
         self.results = results
-        return results
+
+    def postprocess(self, mask_thresh=0.5, score_threshold=0.5):
+        self.filter_outputs(mask_thresh=mask_thresh,
+                            score_threshold=score_threshold)
+        self.merge_predicted_masks_per_class()
+        self.add_empty_masks_to_gt_data()
+        self.compute_dice_score_for_all_targets()
+
+    def draw_masks(self, outdir=None):
+        for j in range(len(self.labels)):
+            fig, axes = plt.subplots(figsize=(
+                5 * len(self.masks[j]), 25), ncols=2, nrows=len(self.masks[0]) + 1, squeeze=False)
+            title = self._raw_targets[j]['filename']
+            plt.suptitle(
+                f'Results for {title} with dice score of {self.results[title]}', fontsize=20, y=0.92)
+            for i, (pred, gt) in enumerate(zip(self.masks[j], self.gt_masks[j])):
+                axes[i][0].imshow(pred)
+                axes[i][0].set_title(
+                    f'Prediction for {self.labels[j][i]}')
+                axes[i][1].imshow(gt)
+                axes[i][1].set_title(
+                    f'Ground truth for {REVERSED_LABELS_MAPPING[self.gt_labels[j][i]]}')
+            axes[i + 1][0].imshow(self.images[j])
+            axes[i + 1][0].set_title('Image')
+            axes[i + 1][1].imshow(self.images[j])
+            axes[i + 1][1].set_title('Image')
+            if outdir is not None:
+                plt.savefig(os.path.join(outdir, title))
+            else:
+                plt.show()
 
     def draw_masks_at_img(self, outpath=None, draw_bb=False, transparency=0.3, rect_thickness=1, text_size=1, text_thickness=1):
         fig, axes = plt.subplots(figsize=(

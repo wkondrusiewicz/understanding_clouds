@@ -25,7 +25,7 @@ class MaskRCNNDataset(Dataset):
 
         masks, img, labels = get_all_masks_and_img(
             self.df, index, os.path.join(self.images_dirpath, 'train_images'), scale_factor=self._img_scale_factor)
-
+        img_filename = self.df.iloc[index]['filename']
         # img_id = self.df.iloc[index]['filename']
         labels = [LABELS_MAPPING[l] for l in labels]
         labels = [l for l in labels if l > 0]
@@ -55,7 +55,7 @@ class MaskRCNNDataset(Dataset):
                   'labels': labels,
                   'image_id': img_id,
                   'area': area,
-                  'iscrowd': iscrowd}
+                  'filename': img_filename}
 
         img = T.ToTensor()(img)
         if self.transforms is not None:

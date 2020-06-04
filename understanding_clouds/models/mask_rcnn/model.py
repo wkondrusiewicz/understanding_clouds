@@ -5,6 +5,7 @@ import time
 from subprocess import Popen, PIPE
 
 from typing import Mapping
+from tqdm import tqdm
 from copy import deepcopy
 
 import numpy as np
@@ -42,7 +43,7 @@ class CloudsMaskRCNN:
 
     def _single_forward_pass(self, images, targets, phase):
         images = [img.cuda() for img in images]
-        targets = [{k: v.cuda() for k, v in target.items()}
+        targets = [{k: v.cuda() if k != 'filename' else v in target.items()}
                    for target in targets]
         # it has a structure of {'loss_type': torch.tensor corresponding to the loss}
         loss_dict = self.net(images, targets)
@@ -112,13 +113,7 @@ class CloudsMaskRCNN:
 
             t2 = time.time()
 
-            p = Popen(['nvidia-smi'], stdin=PIPE,
-                      stdout=PIPE, stderr=PIPE)
-            output, _ = p.communicate(
-                b"input data that is passed to subprocess' stdin")
-
-            gpu_usage = [x for x in str(
-                output).split('|') if 'MiB' in x][0]
+            gpu_usage = self.get_gpu_usage()
 
             print(
                 f'\tEpoch {epoch} took {np.round(t2-t1, 2)} seconds\n\tGPU utilization during this epoch was {gpu_usage}\n')
@@ -127,11 +122,26 @@ class CloudsMaskRCNN:
             json.dump(losses_to_save, f)
         self.save_model(epoch)
 
+    @staticmethod
+    def get_gpu_usage():
+        p = Popen(['nvidia-smi'], stdin=PIPE,
+                  stdout=PIPE, stderr=PIPE)
+        output, _ = p.communicate(
+            b"input data that is passed to subprocess' stdin")
+
+        gpu_usage = [x for x in str(
+            output).split('|') if 'MiB' in x][0]
+        return gpu_usage
+
+    @staticmethod
+    def _to_dcn(tensor):
+        return tensor.detach().cpu().numpy()
+
     def predict(self, dataloader: DataLoader, on_test: bool = False):
         self.net.cuda()
         self.net.eval()
         predictions = []
-        for data in dataloader:
+        for data in tqdm(dataloader, desc='Predicting'):
             images, targets = (data, None) if on_test else data
             predictions.append(self._single_prediction(images, targets))
         return predictions
@@ -139,10 +149,22 @@ class CloudsMaskRCNN:
     def _single_prediction(self, images, targets=None):
         images = [img.cuda() for img in images]
         if targets is not None:
-            targets = [{k: v.cuda() for k, v in target.items()}
+            targets = [{k: v.cuda() if k != 'filename' else v for k, v in target.items()}
                        for target in targets]
         outputs = self.net(deepcopy(images))
-        return MaskRCNNPrediction(raw_images=images, raw_outputs=outputs, raw_targets=targets)
+
+        images = [self._to_dcn(i) for i in images]
+
+        outputs = [{k: self._to_dcn(v)
+                    for k, v in o.items()} for o in outputs]
+
+        targets = [{k: self._to_dcn(
+            v) if k != 'filename' else v for k, v in t.items()} for t in targets]
+
+        pred = MaskRCNNPrediction(
+            raw_images=images, raw_outputs=outputs, raw_targets=targets)
+        torch.cuda.empty_cache()
+        return pred
 
     def save_model(self, epoch):
         os.makedirs(self.experiment_dirpath, exist_ok=True)
