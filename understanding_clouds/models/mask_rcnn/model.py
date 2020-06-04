@@ -141,11 +141,9 @@ class CloudsMaskRCNN:
         self.net.cuda()
         self.net.eval()
         predictions = []
-        for i, data in tqdm(enumerate(dataloader), desc='Predicting'):
+        for data in tqdm(dataloader, desc='Predicting'):
             images, targets = (data, None) if on_test else data
             predictions.append(self._single_prediction(images, targets))
-            if i % 50 == 0:
-                print(self.get_gpu_usage())
         return predictions
 
     def _single_prediction(self, images, targets=None):
@@ -166,7 +164,7 @@ class CloudsMaskRCNN:
         pred = MaskRCNNPrediction(
             raw_images=images, raw_outputs=outputs, raw_targets=targets)
         torch.cuda.empty_cache()
-        return pred
+        return pred.results
 
     def save_model(self, epoch):
         os.makedirs(self.experiment_dirpath, exist_ok=True)

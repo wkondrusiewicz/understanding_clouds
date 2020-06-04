@@ -67,7 +67,7 @@ def main():
     for phase, data in dataloaders.items():
         phase_preds = clouds_model.predict(data)
         results = {k: v for p in phase_preds for k,
-                   v in p.results.items()}
+                   v in p.items()}
         predictions[phase] = results
 
     with open(os.path.join(args.experiment_dirpath, 'prediction_scores.json'), 'w') as f:
