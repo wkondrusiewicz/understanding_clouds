@@ -120,8 +120,11 @@ class MaskRCNNPrediction:
         results = {}
         for masks, gt_masks, t in zip(self.masks, self.gt_masks, self._raw_targets):
             # TODO change image_id to filename
-            results[t['image_id'].item()] = self._get_dice(
-                masks, gt_masks)
+            gt_indices = [i for i, m in enumerate(gt_masks) if m.sum()>0]
+            gt_masks_for_coeff = gt_masks[gt_indices]
+            masks_for_coeff = masks[gt_indices]
+            score = np.mean([self._get_dice(pred, gt) for pred, gt in zip(masks_for_coeff, gt_masks_for_coeff)])
+            results[t['image_id'].item()] = score
         self.results = results
         return results
 
