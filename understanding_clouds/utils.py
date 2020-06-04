@@ -54,7 +54,7 @@ def rle_to_mask(rle_string, width, height):
     rows, cols = height, width
 
     if not isinstance(rle_string, str) or rle_string == NO_MASK_PROVIDED:
-        return np.zeros((height, width))
+        return np.zeros((height, width), np.uint8)
     else:
         rle_numbers = [int(num_string)
                        for num_string in rle_string.split(' ')]
@@ -125,4 +125,4 @@ def plot_losses(data_train, data_valid):
     plt.show()
 
 def get_losses(data, phase):
-    return [losses for epoch_value in data.values() for losses in epoch_value[phase]['per_batch_losses'].values()] 
+    return [losses for epoch_value in data.values() for losses in epoch_value[phase]['per_batch_losses'].values()]

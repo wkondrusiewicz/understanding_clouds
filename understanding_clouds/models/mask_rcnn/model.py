@@ -141,9 +141,11 @@ class CloudsMaskRCNN:
         self.net.cuda()
         self.net.eval()
         predictions = []
-        for data in tqdm(dataloader, desc='Predicting'):
+        for i, data in tqdm(enumerate(dataloader), desc='Predicting'):
             images, targets = (data, None) if on_test else data
             predictions.append(self._single_prediction(images, targets))
+            if i % 50 == 0:
+                print(self.get_gpu_usage())
         return predictions
 
     def _single_prediction(self, images, targets=None):
