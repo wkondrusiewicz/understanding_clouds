@@ -137,7 +137,7 @@ class CloudsMaskRCNN:
     def _to_dcn(tensor):
         return tensor.detach().cpu().numpy()
 
-    def predict(self, dataloader: DataLoader, on_test: bool = False):
+    def predict(self, dataloader: DataLoader, on_test: bool=False, full_pred: bool=True):
         self.net.cuda()
         self.net.eval()
         predictions = []
@@ -146,7 +146,7 @@ class CloudsMaskRCNN:
             predictions.append(self._single_prediction(images, targets))
         return predictions
 
-    def _single_prediction(self, images, targets=None):
+    def _single_prediction(self, images, targets=None, full_pred: bool=True):
         images = [img.cuda() for img in images]
         if targets is not None:
             targets = [{k: v.cuda() if k != 'filename' else v for k, v in target.items()}
@@ -164,7 +164,8 @@ class CloudsMaskRCNN:
         pred = MaskRCNNPrediction(
             raw_images=images, raw_outputs=outputs, raw_targets=targets)
         torch.cuda.empty_cache()
-        return pred.results
+
+        return pred if full_pred else pred.results
 
     def save_model(self, epoch):
         os.makedirs(self.experiment_dirpath, exist_ok=True)

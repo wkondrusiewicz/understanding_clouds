@@ -65,7 +65,7 @@ def main():
 
     predictions = {}
     for phase, data in dataloaders.items():
-        phase_preds = clouds_model.predict(data)
+        phase_preds = clouds_model.predict(data, full_pred=False)
         results = {k: v for p in phase_preds for k,
                    v in p.items()}
         predictions[phase] = results
