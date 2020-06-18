@@ -13,6 +13,7 @@ import torchvision
 from torch.utils.data import DataLoader
 
 from loggify import Loggify
+from tqdm import tqdm
 
 from understanding_clouds.datasets.unet_dataset import UnetDataset
 from understanding_clouds.models.unet.dice_loss import DiceLoss, BCEDiceLoss
@@ -141,7 +142,7 @@ class CloudsUnet:
         # USE BATCH SIZE OF 1 !!!
         self.net.eval()
         preds = []
-        for img, masks, filename in dataloader:
+        for img, masks, filename in tqdm(dataloader, desc='Predicting'):
             img = img.cuda()
             p = self.net(img)
             p = self._to_dcnst(p)
