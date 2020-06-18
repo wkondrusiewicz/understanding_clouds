@@ -137,17 +137,19 @@ class CloudsUnet:
         t = t.transpose((2,1,0)) if img_flag else t.transpose((0,2,1))
         return t
 
-    def predict(self, dataloader):
+    def predict(self, dataloader, scores_only=False):
         # USE BATCH SIZE OF 1 !!!
         self.net.eval()
         preds = []
         for img, masks, filename in dataloader:
             img = img.cuda()
-            p = clouds_model.net(img)
+            p = self.net(img)
             p = self._to_dcnst(p)
             masks = self._to_dcnst(masks)
             img = self._to_dcnst(img, img_flag=True)
-            prediction = UnetPrediction(p, masks, img, filename, thresh=0.6)
+            prediction = UnetPrediction(p, masks, img, filename[0], thresh=0.6)
+            if scores_only:
+                prediction = (prediction.filename, prediction.score)
             preds.append(prediction)
         return preds
 
