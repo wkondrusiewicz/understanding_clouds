@@ -13,9 +13,11 @@ import torchvision
 from torch.utils.data import DataLoader
 
 from loggify import Loggify
+from tqdm import tqdm
 
 from understanding_clouds.datasets.unet_dataset import UnetDataset
 from understanding_clouds.models.unet.dice_loss import DiceLoss, BCEDiceLoss
+from understanding_clouds.models.unet.prediction import UnetPrediction
 
 
 class CloudsUnet:
@@ -129,6 +131,28 @@ class CloudsUnet:
         self.optimizer.load_state_dict(checkpoint['optimizer'])
         self.lr_scheduler.load_state_dict(checkpoint['lr_scheduler'])
         print('Model loaded successfully!')
+
+    @staticmethod
+    def _to_dcnst(tensor, img_flag=False):
+        t = tensor.detach().cpu().numpy().squeeze()
+        t = t.transpose((2,1,0)) if img_flag else t.transpose((0,2,1))
+        return t
+
+    def predict(self, dataloader, scores_only=False):
+        # USE BATCH SIZE OF 1 !!!
+        self.net.eval()
+        preds = []
+        for img, masks, filename in tqdm(dataloader, desc='Predicting'):
+            img = img.cuda()
+            p = self.net(img)
+            p = self._to_dcnst(p)
+            masks = self._to_dcnst(masks)
+            img = self._to_dcnst(img, img_flag=True)
+            prediction = UnetPrediction(p, masks, img, filename[0], thresh=0.6)
+            if scores_only:
+                prediction = (prediction.filename, prediction.score)
+            preds.append(prediction)
+        return preds
 
 
 def get_mask_unet_net(num_classes, device):

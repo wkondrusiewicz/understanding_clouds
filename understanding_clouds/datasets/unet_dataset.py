@@ -43,8 +43,8 @@ class UnetDataset(Dataset):
 
         img = img.to('cuda')
         masks = masks.to('cuda').float()
-
-        return img, masks
+        img_filename = self.df.iloc[index]['filename']
+        return img, masks, img_filename
 
     def __len__(self):
         return len(self.df)
